@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException,Depends,Body
+from fastapi import APIRouter, HTTPException,Depends,Body, File, UploadFile
 from services.invoice_data_extract import gemini_output,generate_invoice_number,llm_recomendation,serialize_objectid,parse_date,get_cleaned_values,get_product_stock
 from pymongo.collection import Collection
 import json
@@ -11,11 +11,14 @@ from bson import ObjectId
 
 router = APIRouter()
 
-@router.get("/save-invoice")
-async def save_invoice():
+@router.post("/save-invoice")
+async def save_invoice(invoice: UploadFile = File(...)):
         collection: Collection = database["Invoice"]
-        temp_file_path = f"./test_img/handwritten_img5.jpg"
-        invoice_data = gemini_output(temp_file_path)
+        file_location = f"./uploaded_invoices/{invoice.filename}"
+        with open(file_location, "wb") as file:
+              file.write(await invoice.read())
+        # temp_file_path = f"./test_img/handwritten_img5.jpg"
+        invoice_data = gemini_output(file_location)
         json_string = re.sub(r'```json\n(.*?)\n```', r'\1', invoice_data, flags=re.DOTALL)
         parsed_data = json.loads(json_string)
         parsed_data['status']=False
@@ -162,3 +165,4 @@ async def update_invoice_product(update_data: UpdateInvoiceProduct):
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating invoice product: {str(e)}")
+

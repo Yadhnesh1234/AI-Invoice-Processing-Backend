@@ -36,6 +36,7 @@ def image_format(image_path):
 
 def gemini_output(image_path):
     gene_ai_key = os.getenv('GENAI_API_KEY')
+    print(gene_ai_key)
     genai.configure(api_key=gene_ai_key)
 
     MODEL_CONFIG = {
@@ -190,10 +191,12 @@ async def get_product_stock(data):
     
 async def get_cleaned_values(parsed_data):           
      invoice_date = parsed_data.get("InvoiceDate")
-     if not invoice_date:
-        invoice_date = datetime.now()
+     if isinstance(invoice_date, str):
+         invoice_date = parse_date(invoice_date)  
+     elif isinstance(invoice_date, datetime):
+         invoice_date = invoice_date.strftime("%Y-%m-%d %H:%M:%S")
      else:
-        invoice_date = parse_date(invoice_date) or datetime.now().strftime("%Y-%m-%d")
+         invoice_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
      total_amount = parsed_data.get("TotalAmount")
      if not total_amount:
@@ -203,6 +206,7 @@ async def get_cleaned_values(parsed_data):
             total_amount = sum(item.get("total_price", 0) for item in product_items)
      flag=0
      suggetion_list=[]
+     print("Hello")
      for data in parsed_data.get("ProductItems"):
            response=await get_product_stock(data)
            if(response["code"]==0):
@@ -211,14 +215,15 @@ async def get_cleaned_values(parsed_data):
            elif response["code"] == -1:   
                 return {"code":-1,"data":data["Description"]}
            else :
-             if data["StockCode"] is None:
-                  result=response["data"]
-                  data["Description"]=result["Description"]
-                  data["StockCode"] = result["StockCode"]
-                  data["UnitPrice"] = result["Price"]
-                  data["Quantity"] = float(data["total_price"])/float(result["Price"])
-             else:
-                  data["Quantity"] = float(data["total_price"])/float(result["Price"])
+                if data["StockCode"] is None:
+                      result = response["data"]
+                      data["Description"] = result["Description"]
+                      data["StockCode"] = result["StockCode"]
+                      data["UnitPrice"] = result["Price"]
+                      data["Quantity"] = float(data["total_price"]) / float(result["Price"])
+                elif response["code"] == 1:
+                      result = response["data"]
+                      data["Quantity"] = float(data["total_price"]) / float(result["Price"])
                
      if flag :
          return {"code":0,"data":suggetion_list}    

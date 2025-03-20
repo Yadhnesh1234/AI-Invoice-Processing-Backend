@@ -7,10 +7,19 @@ from routes.predictions_routes import router as prediction_router
 from pymongo.collection import Collection
 from db.database import database
 import pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
+origins = ["http://localhost:3000","http://localhost:3001"]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(user_router, prefix="/api", tags=["Users"])
 app.include_router(product_router, prefix="/api", tags=["Products"])
 app.include_router(invoice_router, prefix="/api", tags=["Invoices"])
