@@ -9,10 +9,12 @@ from pymongo.collection import Collection
 from bson import ObjectId
 from transformers import AutoTokenizer
 from motor.motor_asyncio import AsyncIOMotorClient
+import cohere
+import numpy as np
 
 
 load_dotenv()
-
+co = cohere.ClientV2("UZHbYbgFigQvfkHwNwNs2564Yx4T8yWVB6jHsFhs")
 
 DATE_FORMATS = [
     "%d/%m/%Y", 
@@ -137,6 +139,16 @@ def serialize_objectid(obj):
         return [serialize_objectid(item) for item in obj]
     return obj
 
+def semantic_search(products,index,query):
+    query_emb = co.embed(
+        texts=[query],
+        model="embed-multilingual-v3.0",
+        input_type="search_query",
+        embedding_types=["float"],
+    ).embeddings.float
+    D, I = index.search(np.array(query_emb).astype("float32"), k=5)
+    results = [products[i] for i in I[0]]
+    return results
 def llm_recomendation(search_query,product_names):
      gene_ai_key = os.getenv('GENAI_API_KEY')
      genai.configure(api_key=gene_ai_key)
@@ -163,7 +175,7 @@ def llm_recomendation(search_query,product_names):
      product_list=response.text.split('\n')
      product_list=list(filter(lambda x:x!='',product_list))   
      return product_list 
-async def get_product_stock(data):
+async def get_product_stock(data,index):
   try:
        collection: Collection = database['Product']
        products = await collection.find({}).to_list(None)
@@ -171,8 +183,8 @@ async def get_product_stock(data):
        match_product = [prod for prod in products if prod['Description']==search_query]
        if len(match_product)==1:
                return {"code":1,"data":match_product[0]} 
-       product_names = [product.get('Description', '') for product in products]
-       product_list=llm_recomendation(search_query,product_names)
+       product_names = [pd['Description'] for pd in products if pd.get('Description')]
+       product_list=semantic_search(product_names,index,search_query)#llm_recomendation(search_query,product_names)
        print("Product List: ",product_list)
        if len(product_list)>1: 
            desc_to_stock = {prod["Description"]:prod["StockCode"] for prod in products}
@@ -189,7 +201,7 @@ async def get_product_stock(data):
     
     
     
-async def get_cleaned_values(parsed_data):           
+async def get_cleaned_values(parsed_data,index):           
      invoice_date = parsed_data.get("InvoiceDate")
      if isinstance(invoice_date, str):
          invoice_date = parse_date(invoice_date)  
@@ -208,7 +220,8 @@ async def get_cleaned_values(parsed_data):
      suggetion_list=[]
      print("Hello")
      for data in parsed_data.get("ProductItems"):
-           response=await get_product_stock(data)
+           print("DATA BEFORE get_product_stock:", data)
+           response=await get_product_stock(data,index)
            if(response["code"]==0):
                flag=1
                suggetion_list.append({"Description":data["Description"],"Items":response["data"]})
@@ -249,3 +262,15 @@ async def get_cleaned_values(parsed_data):
         }
      return {"code":1,"data":invoice}
 
+def get_batched_embeddings(texts, batch_size=96):
+    all_embeddings = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        response = co.embed(
+            texts=batch,
+            model="embed-multilingual-v3.0",
+            input_type="search_document",
+            embedding_types=["float"]
+        ).embeddings.float
+        all_embeddings.extend(response)
+    return all_embeddings
